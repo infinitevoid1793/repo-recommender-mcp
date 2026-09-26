@@ -1,12 +1,13 @@
 """GitHub Repo Recommender MCP server.
 
-Exposes nine tools over stdio: search_issues, search_repos, get_repo_context,
-get_issue_activity, get_repo_health, record_recommendation, update_interests,
-save_shortlist, and get_shortlists.
+Exposes eleven tools over stdio: search_issues, search_repos, get_repo_context,
+get_issue_activity, get_repo_health, get_issue_detail, get_file_content,
+record_recommendation, update_interests, save_shortlist, and get_shortlists.
 Claude does the fit-scoring itself, in conversation, by reasoning over
 what these tools return plus the persisted interest profile.
 """
 
+import base64
 import math
 import statistics
 import time
@@ -54,7 +55,9 @@ def search_issues(
 
     If seed_repos is omitted, falls back to the configured seed list; pass
     an empty list explicitly to search the open web of GitHub instead.
-    Issues already logged via record_recommendation are excluded.
+    Issues already logged via record_recommendation are excluded. Bodies are
+    only snippets: to vet a promising issue, call get_issue_detail, then
+    get_file_content on the code it names.
     """
     query = _build_query(labels, languages, seed_repos, keywords)
     try:
@@ -314,6 +317,123 @@ def get_shortlists(topic: str | None = None, limit: int = 5) -> list[dict]:
     starting new research so a topic can be refreshed instead of redone.
     """
     return db.get_shortlists(topic, limit)
+
+
+MAX_ISSUE_COMMENTS = 100
+MAX_FILE_LINES = 500
+
+
+@mcp.tool()
+def get_issue_detail(repo: str, issue_number: int, max_comments: int = MAX_ISSUE_COMMENTS) -> dict:
+    """Read an issue in full: the untruncated body plus its comment thread in
+    order (author, author_association, body, timestamp). Use this to vet a
+    candidate from search_issues or a shortlist before recommending it, then
+    call get_file_content on whatever file or function the issue names.
+    Comments are capped at max_comments (default 100); total_comments and
+    truncated say whether the thread was cut. Not saved to history.
+    """
+    try:
+        issue = gh.get_issue(repo, issue_number)
+        comments: list[dict] = []
+        page = 1
+        while len(comments) < max_comments:
+            batch = gh.get_issue_comments(repo, issue_number, page=page, per_page=100)
+            comments.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+    except GitHubError as e:
+        return {"error": str(e)}
+
+    total = issue.get("comments", len(comments))
+    comments = comments[:max_comments]
+    return {
+        "repo": repo,
+        "issue_number": issue_number,
+        "title": issue.get("title"),
+        "url": issue.get("html_url"),
+        "state": issue.get("state"),
+        "is_pull_request": "pull_request" in issue,
+        "author": (issue.get("user") or {}).get("login"),
+        "author_association": issue.get("author_association"),
+        "labels": [label.get("name") for label in issue.get("labels", [])],
+        "created_at": issue.get("created_at"),
+        "updated_at": issue.get("updated_at"),
+        "closed_at": issue.get("closed_at"),
+        "body": issue.get("body") or "",
+        "total_comments": total,
+        "truncated": total > len(comments),
+        "comments": [
+            {
+                "author": (c.get("user") or {}).get("login"),
+                "author_association": c.get("author_association"),
+                "created_at": c.get("created_at"),
+                "body": c.get("body") or "",
+            }
+            for c in comments
+        ],
+    }
+
+
+@mcp.tool()
+def get_file_content(
+    repo: str,
+    path: str,
+    ref: str | None = None,
+    start_line: int | None = None,
+    end_line: int | None = None,
+) -> dict:
+    """Read a file from a repo so an issue's claim can be checked against the
+    real code. ref is a branch, tag or commit (default: the default branch).
+    start_line/end_line (1-based, inclusive) return a slice; at most 500 lines
+    come back per call, with total_lines and truncated so you can page with a
+    later start_line. If path is a directory, returns its entries instead.
+    Files over 1 MB and binary files are not returned. Not saved to history.
+    """
+    if start_line is not None and start_line < 1:
+        return {"error": "start_line must be 1 or greater."}
+    if end_line is not None and end_line < (start_line or 1):
+        return {"error": "end_line must be greater than or equal to start_line."}
+
+    try:
+        data = gh.get_contents(repo, path, ref)
+    except GitHubError as e:
+        return {"error": str(e)}
+
+    if isinstance(data, list):
+        return {
+            "repo": repo,
+            "path": path,
+            "type": "directory",
+            "entries": [{"name": e["name"], "type": e["type"], "path": e["path"]} for e in data],
+        }
+    if data.get("type") != "file":
+        return {"error": f"Path is a {data.get('type')}, not a readable file."}
+    if data.get("encoding") != "base64" or not data.get("content"):
+        return {"error": "File is too large for the contents API (over 1 MB) or empty."}
+    try:
+        text = base64.b64decode(data["content"]).decode("utf-8")
+    except UnicodeDecodeError:
+        return {"error": "File is binary or not UTF-8 text."}
+
+    lines = text.splitlines()
+    total = len(lines)
+    first = start_line or 1
+    if first > total:
+        return {"error": f"start_line {first} is past the end of the file ({total} lines)."}
+    last = min(end_line or total, total)
+    capped_last = min(last, first + MAX_FILE_LINES - 1)
+    return {
+        "repo": repo,
+        "path": path,
+        "ref": ref,
+        "sha": data.get("sha"),
+        "total_lines": total,
+        "start_line": first,
+        "end_line": capped_last,
+        "truncated": capped_last < last,
+        "content": "\n".join(lines[first - 1 : capped_last]),
+    }
 
 
 @mcp.tool()

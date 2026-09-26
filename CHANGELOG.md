@@ -2,6 +2,13 @@
 
 Version history for this project.
 
+## v0.4 — 2026-09-27
+
+- Add `get_issue_detail`: full untruncated issue body plus the comment thread (author, `author_association`, body, timestamp), capped at 100 comments by default with `total_comments` and `truncated`; flags pull requests with `is_pull_request`
+- Add `get_file_content`: reads a file at an optional `ref` and line range, at most 500 lines per call with `total_lines` and `truncated` for paging; if the path is a directory it returns the entries instead; files over 1 MB and binary files return an error
+- Neither tool writes to the database
+- `search_issues` description now points at the new tools for vetting an issue
+
 ## v0.3 — 2026-09-27
 
 - Add `get_repo_health`: samples recent PRs (up to 3 pages, stopping at ~30 from non-maintainers, bots excluded) and returns outside-PR merge rate, median days to merge/close, oldest open outside PR, last outside merge date, and a `low_confidence` flag under 10 outside PRs. No composite score. Each result is saved as a snapshot; the previous one is returned for comparison

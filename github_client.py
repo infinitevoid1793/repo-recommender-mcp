@@ -1,6 +1,7 @@
 """Thin wrapper around the GitHub REST API used by the MCP tools."""
 
 import base64
+from urllib.parse import quote
 
 import requests
 
@@ -73,8 +74,20 @@ class GitHubClient:
             return ""
         return decoded[:max_chars]
 
-    def get_issue_comments(self, repo: str, issue_number: int) -> list[dict]:
-        return self._get(f"/repos/{repo}/issues/{issue_number}/comments")
+    def get_issue_comments(
+        self, repo: str, issue_number: int, page: int = 1, per_page: int = 30
+    ) -> list[dict]:
+        return self._get(
+            f"/repos/{repo}/issues/{issue_number}/comments",
+            params={"page": page, "per_page": per_page},
+        )
+
+    def get_issue(self, repo: str, issue_number: int) -> dict:
+        return self._get(f"/repos/{repo}/issues/{issue_number}")
+
+    def get_contents(self, repo: str, path: str, ref: str | None = None) -> dict | list:
+        params = {"ref": ref} if ref else None
+        return self._get(f"/repos/{repo}/contents/{quote(path.strip('/'), safe='/')}", params)
 
     def get_repo_issue_counts(self, repo: str) -> dict:
         open_data = self._get(
