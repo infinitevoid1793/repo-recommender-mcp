@@ -1,0 +1,27 @@
+# Copy this file to config.yaml and fill in your own values.
+# config.yaml is gitignored — it's never committed.
+#
+# GitHub token is NOT set here. Set it as an environment variable
+# named GITHUB_TOKEN in your Claude Desktop MCP server config instead.
+
+# Seed repos are optional. When provided, search_issues can scope its
+# search to just these repos via a `seed_repos` argument. Two categories
+# are just a convention for your own organization — the tool reads them
+# as one flat list.
+seed_repos:
+  foundational:
+    - dbt-labs/dbt-core
+    - apache/airflow
+    - pandas-dev/pandas
+    - scikit-learn/scikit-learn
+  applied:
+    - example-org/example-sports-analytics-repo
+
+# Used to seed the `interests` table in state.duckdb on first run only.
+# After that, the persisted profile in the database is the source of
+# truth — update it by telling Claude to call update_interests, not by
+# editing this file again.
+profile_blurb: |
+  Stack: Python, SQL, dbt, Airflow, pandas, scikit-learn, some LangChain/MCP.
+  Interests: soccer analytics, sports-AI crossover projects, public dataset tooling.
+  Goal: practice agentic-workflow contributions, not necessarily landing a merge.

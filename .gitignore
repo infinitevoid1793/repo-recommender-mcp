@@ -1,0 +1,8 @@
+config.yaml
+state.duckdb
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+GitHub Repo Recommender*Tool Spec.md
