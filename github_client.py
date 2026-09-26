@@ -40,9 +40,23 @@ class GitHubClient:
         )
         return data.get("items", [])[:max_results]
 
-    def search_repositories(self, query: str, per_page: int = 30) -> list[dict]:
-        data = self._get("/search/repositories", params={"q": query, "per_page": per_page})
+    def search_repositories(self, query: str, per_page: int = 30, page: int = 1) -> list[dict]:
+        data = self._get(
+            "/search/repositories", params={"q": query, "per_page": per_page, "page": page}
+        )
         return data.get("items", [])
+
+    def get_pulls(self, repo: str, page: int = 1, per_page: int = 30) -> list[dict]:
+        return self._get(
+            f"/repos/{repo}/pulls",
+            params={
+                "state": "all",
+                "sort": "created",
+                "direction": "desc",
+                "per_page": per_page,
+                "page": page,
+            },
+        )
 
     def get_repo(self, repo: str) -> dict:
         return self._get(f"/repos/{repo}")

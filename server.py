@@ -1,14 +1,17 @@
 """GitHub Repo Recommender MCP server.
 
-Exposes six tools over stdio: search_issues, search_repos, get_repo_context,
-get_issue_activity, record_recommendation, and update_interests.
+Exposes nine tools over stdio: search_issues, search_repos, get_repo_context,
+get_issue_activity, get_repo_health, record_recommendation, update_interests,
+save_shortlist, and get_shortlists.
 Claude does the fit-scoring itself, in conversation, by reasoning over
 what these tools return plus the persisted interest profile.
 """
 
 import math
+import statistics
 import time
 from datetime import datetime, timedelta, timezone
+from typing import NotRequired, TypedDict
 
 from mcp.server.mcpserver import MCPServer
 
@@ -111,6 +114,7 @@ def search_repos(
     min_stars: int = 10,
     active_within_months: int = 12,
     max_results: int = 20,
+    page: int = 1,
 ) -> list[dict]:
     """Discover active repos by GitHub topic and/or keyword, for niche domains
     (e.g. soccer analytics) where search_issues is empty or noisy. Runs one
@@ -118,6 +122,14 @@ def search_repos(
     archived repos, forks, and repos with no push in active_within_months.
     Ranked by a blend of recency and stars. Follow up by calling search_issues
     with the interesting repos as seed_repos to find concrete issues.
+
+    page fetches later result pages per topic (1 = first). Each result has
+    previously_seen and shortlisted flags: repos are never hidden, so use the
+    flags to prioritise new finds. Every returned repo is saved to history.
+
+    Suggested research workflow: get_shortlists for the topic (refresh instead
+    of redoing) -> search_repos per topic -> get_repo_health on candidates ->
+    optionally get_repo_context -> pick ~10 -> save_shortlist.
     """
     if not topics and not keywords:
         return [{"error": "Provide at least one of topics or keywords."}]
@@ -138,7 +150,7 @@ def search_repos(
         if i:
             time.sleep(SEARCH_REQUEST_DELAY_SECONDS)
         try:
-            items = gh.search_repositories(query)
+            items = gh.search_repositories(query, page=page)
         except GitHubError as e:
             if merged:
                 break
@@ -164,7 +176,144 @@ def search_repos(
     repos.sort(key=lambda r: r["_score"], reverse=True)
     for r in repos:
         del r["_score"]
-    return repos[:max_results]
+    repos = repos[:max_results]
+
+    seen, shortlisted = db.get_seen_and_shortlisted([r["full_name"] for r in repos])
+    for r in repos:
+        r["previously_seen"] = r["full_name"] in seen
+        r["shortlisted"] = r["full_name"] in shortlisted
+    db.record_repos_seen(repos)
+    return repos
+
+
+MAX_HEALTH_PAGES = 3
+HEALTH_TARGET_OUTSIDE_PRS = 30
+LOW_CONFIDENCE_BELOW = 10
+
+
+def _parse_time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _days_between(start: str, end: datetime) -> float:
+    return (end - _parse_time(start)).total_seconds() / 86400
+
+
+def _is_outside_pr(pr: dict) -> bool:
+    user = pr.get("user")
+    if not user or user.get("type") == "Bot" or user.get("login", "").endswith("[bot]"):
+        return False
+    return pr.get("author_association") not in MAINTAINER_ASSOCIATIONS
+
+
+@mcp.tool()
+def get_repo_health(repo: str) -> dict:
+    """Estimate whether a PR from an outside contributor to this repo will get
+    a response and be merged. Samples recent pull requests (up to ~90 scanned,
+    stopping at ~30 from non-maintainers, bots excluded) and returns raw
+    signals with sample sizes and no composite score: merge_rate, median days
+    to merge or close, oldest open outside PR age, last_outside_pr_merged_at
+    (is it responsive now?), and low_confidence when fewer than 10 outside
+    PRs were found. The result is saved as a snapshot; the previous snapshot
+    is included for comparison.
+    """
+    scanned = 0
+    outside: list[dict] = []
+    try:
+        for page in range(1, MAX_HEALTH_PAGES + 1):
+            batch = gh.get_pulls(repo, page=page)
+            scanned += len(batch)
+            outside.extend(pr for pr in batch if _is_outside_pr(pr))
+            if len(batch) < 30 or len(outside) >= HEALTH_TARGET_OUTSIDE_PRS:
+                break
+    except GitHubError as e:
+        return {"error": str(e)}
+
+    now = datetime.now(timezone.utc)
+    merged = [pr for pr in outside if pr.get("merged_at")]
+    closed = [pr for pr in outside if pr.get("state") == "closed" and not pr.get("merged_at")]
+    still_open = [pr for pr in outside if pr.get("state") == "open"]
+
+    def median_days(prs: list[dict], end_field: str) -> float | None:
+        if not prs:
+            return None
+        return round(
+            statistics.median(
+                (_parse_time(pr[end_field]) - _parse_time(pr["created_at"])).total_seconds()
+                / 86400
+                for pr in prs
+            ),
+            1,
+        )
+
+    decided = len(merged) + len(closed)
+    metrics = {
+        "prs_scanned": scanned,
+        "outside_prs_sampled": len(outside),
+        "merged": len(merged),
+        "closed_unmerged": len(closed),
+        "open_count": len(still_open),
+        "merge_rate": round(len(merged) / decided, 2) if decided else None,
+        "median_days_to_merge": median_days(merged, "merged_at"),
+        "median_days_to_close_unmerged": median_days(closed, "closed_at"),
+        "oldest_open_days": (
+            int(max(_days_between(pr["created_at"], now) for pr in still_open))
+            if still_open
+            else None
+        ),
+        "last_outside_pr_merged_at": (
+            max(pr["merged_at"] for pr in merged) if merged else None
+        ),
+        "low_confidence": len(outside) < LOW_CONFIDENCE_BELOW,
+    }
+
+    previous = db.get_latest_health_snapshot(repo)
+    db.save_health_snapshot(repo, metrics)
+    return {"repo": repo, **metrics, "previous_snapshot": previous}
+
+
+class ShortlistEntry(TypedDict):
+    full_name: str
+    reason: str
+    status: NotRequired[str]
+
+
+@mcp.tool()
+def save_shortlist(
+    topic: str,
+    repos: list[ShortlistEntry],
+    shortlist_id: int | None = None,
+    notes: str | None = None,
+) -> dict:
+    """Save a ranked shortlist of repos for a topic (rank = order given).
+    Each entry: full_name, a one-line reason, and optional status (shortlisted
+    [default], interested, dismissed, pursued). To re-rank or change statuses,
+    read the list with get_shortlists, edit it, and call this again with its
+    shortlist_id, which replaces that list's entries.
+    """
+    entries = []
+    for r in repos:
+        status = r.get("status", "shortlisted")
+        if status not in db.SHORTLIST_STATUSES:
+            return {"error": f"Invalid status '{status}'. Use one of {sorted(db.SHORTLIST_STATUSES)}."}
+        entries.append({"full_name": r["full_name"], "reason": r.get("reason"), "status": status})
+    if len({e["full_name"] for e in entries}) != len(entries):
+        return {"error": "Duplicate full_name in repos."}
+    try:
+        saved_id = db.save_shortlist(topic, entries, shortlist_id, notes)
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"shortlist_id": saved_id, "topic": topic, "repo_count": len(entries)}
+
+
+@mcp.tool()
+def get_shortlists(topic: str | None = None, limit: int = 5) -> list[dict]:
+    """Retrieve saved shortlists, most recently updated first, optionally
+    filtered by topic (case-insensitive substring). Each repo includes its rank,
+    reason, status, and latest saved health snapshot. Check this before
+    starting new research so a topic can be refreshed instead of redone.
+    """
+    return db.get_shortlists(topic, limit)
 
 
 @mcp.tool()
