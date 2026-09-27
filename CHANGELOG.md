@@ -14,6 +14,7 @@ any tool returns, with one bug fix noted below.
 - `config.yaml`, `.env` and `state.duckdb` still resolve to the project root via `paths.py`, so existing state is untouched; `REPO_RECOMMENDER_HOME` overrides it
 - 88 tests, all offline: the pure logic (query building, repo ranking, health summaries, file slicing, feasibility flags, shortlist validation) plus database round-trips against a temp DuckDB file per test, and a smoke test that all twelve tools register
 - Bug fix, found by a test: `search_issues(seed_repos=[])` fell back to the configured seed list instead of searching all of GitHub, because an empty list is falsy. Passing an empty list now does what the docstring always promised
+- GitHub Actions CI: lint and the test suite on Python 3.11, 3.12 and 3.13, then a build job that produces the wheel and sdist, checks their filenames match the declared version, and uploads them as run artifacts. No deployment
 - `timeutil.parse_time` drops a manual `Z` replacement that Python 3.11+ `fromisoformat` handles natively; `ruff` lint rules are pinned in `pyproject.toml` so an upgrade can't fail the build on newly added rules
 
 ## v0.5 — 2026-09-26

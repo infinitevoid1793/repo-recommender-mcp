@@ -1,5 +1,7 @@
 # GitHub Repo Recommender (MCP)
 
+[![CI](https://github.com/infinitevoid1793/repo-recommender-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/infinitevoid1793/repo-recommender-mcp/actions/workflows/ci.yml)
+
 A local [MCP](https://modelcontextprotocol.io) server that helps Claude recommend specific GitHub issues and repos worth contributing to, based on *your* stack and interests rather than a generic trending list. It runs on your machine and plugs into Claude Desktop.
 
 Ask Claude *"what should I look at this week?"* and it searches GitHub with these tools, reads the results, and picks a shortlist, each with a one-line reason it fits you. Claude does the ranking itself in the conversation; the server supplies the data.
@@ -102,6 +104,8 @@ In a new chat, ask something like *"what should I look at this week?"* For a nic
 - Code lives in `src/repo_recommender/`, with the tools grouped into
   `tools/discovery.py`, `tools/inspection.py` and `tools/state.py`. Tests are in
   `tests/` and run without a token or network access.
+- CI (`.github/workflows/ci.yml`) lints and tests on Python 3.11–3.13, then
+  builds the wheel and sdist and attaches them to the run as artifacts.
 
 ## License
 

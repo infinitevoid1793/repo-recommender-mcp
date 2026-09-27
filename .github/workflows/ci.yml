@@ -1,0 +1,69 @@
+# Lint, test and build on every change. No deployment: the build's wheel and
+# sdist are uploaded as run artifacts, downloadable from the run page.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# This workflow only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every Python version, rather than stopping at the first failure.
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      # The suite is offline by design, so no GitHub token is needed.
+      - name: Test
+        run: pytest -q
+
+  build:
+    # Only build once the tests pass on every supported version.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Build wheel and sdist
+        run: |
+          pip install build
+          python -m build
+
+      # Catches a build that silently produced a different version than declared.
+      - name: Check the built files match the declared version
+        run: |
+          version=$(python -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_bytes().decode())['project']['version'])")
+          ls -1 dist/
+          test -f "dist/repo_recommender_mcp-${version}-py3-none-any.whl"
+          test -f "dist/repo_recommender_mcp-${version}.tar.gz"
+          echo "version ${version} OK"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
