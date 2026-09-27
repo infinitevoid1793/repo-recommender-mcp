@@ -11,11 +11,12 @@ opened per call and closed immediately, with a brief retry on lock conflicts.
 import json
 import time
 from contextlib import contextmanager
-from pathlib import Path
 
 import duckdb
 
-DB_PATH = Path(__file__).parent / "state.duckdb"
+from .paths import project_root
+
+DB_PATH = project_root() / "state.duckdb"
 LOCK_RETRY_SECONDS = 10
 LOCK_RETRY_INTERVAL = 0.1
 
@@ -232,7 +233,7 @@ def _latest_health(con, full_name: str) -> dict | None:
     ).fetchone()
     if not row:
         return None
-    snapshot = dict(zip(["fetched_at"] + HEALTH_COLUMNS, row))
+    snapshot = dict(zip(["fetched_at", *HEALTH_COLUMNS], row, strict=True))
     snapshot["fetched_at"] = snapshot["fetched_at"].isoformat()
     return snapshot
 
