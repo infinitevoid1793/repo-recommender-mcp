@@ -1,7 +1,10 @@
 """Everything that persists: recommendation history, the interest profile, and
 saved shortlists."""
 
-from typing import NotRequired, TypedDict
+# pydantic, which builds the tool input schemas, requires
+# typing_extensions.TypedDict rather than typing.TypedDict on Python < 3.12,
+# and the field qualifiers must come from the same module as the class.
+from typing_extensions import NotRequired, TypedDict  # noqa: UP035
 
 from .. import db
 from ..app import mcp
