@@ -436,6 +436,91 @@ def get_file_content(
     }
 
 
+AI_AUTHORSHIP_MARKERS = ("devin", "copilot", "codex", "cursor", "claude", "generated with")
+MAX_FEASIBILITY_PRS = 10
+
+
+def _looks_ai_authored(login: str, body: str) -> bool:
+    if login.endswith("[bot]"):
+        return True
+    head = (body or "")[:1000].lower()
+    return any(marker in head for marker in AI_AUTHORSHIP_MARKERS)
+
+
+@mcp.tool()
+def get_pr_feasibility(repo: str, issue_number: int) -> dict:
+    """Check whether an issue already has pull requests against it, before
+    spending time vetting it or drafting a contribution spec. Issues are
+    frequently raced within minutes by AI agents that link the issue only from
+    the PR body, so the issue's own comment thread shows nothing. Run this
+    right after get_issue_detail and before get_file_content: ruling an issue
+    out here is cheaper than reading the code first.
+
+    Finds PRs by searching for the issue number in PR titles and bodies, then
+    fetches each PR's real state. contested means an open non-draft PR exists;
+    being_raced means 2+ open PRs including drafts. A PR linked only through
+    GitHub's Development sidebar, with no mention in its text, is not found.
+    is_bot is a heuristic (bot login, or AI authorship hinted in the PR body),
+    not authoritative. Not saved to history.
+    """
+    try:
+        issue = gh.get_issue(repo, issue_number)
+        found = gh.search_issues(f"repo:{repo} {issue_number} in:title,body type:pr", 30)
+    except GitHubError as e:
+        return {"error": str(e)}
+    numbers = {item["number"] for item in found if item.get("number")}
+    issue_created_at = issue.get("created_at")
+
+    prs = []
+    for number in sorted(numbers)[:MAX_FEASIBILITY_PRS]:
+        try:
+            pr = gh.get_pull(repo, number)
+        except GitHubError:
+            continue
+        login = (pr.get("user") or {}).get("login", "")
+        merged = bool(pr.get("merged_at"))
+        prs.append(
+            {
+                "number": pr["number"],
+                "title": pr.get("title"),
+                "url": pr.get("html_url"),
+                "author": login,
+                "author_association": pr.get("author_association"),
+                "is_bot": _looks_ai_authored(login, pr.get("body") or ""),
+                "created_at": pr.get("created_at"),
+                "state": "merged" if merged else pr.get("state"),
+                "draft": bool(pr.get("draft")),
+            }
+        )
+
+    prs.sort(key=lambda p: p["created_at"] or "")
+    open_ready = [p for p in prs if p["state"] == "open" and not p["draft"]]
+    open_draft = [p for p in prs if p["state"] == "open" and p["draft"]]
+
+    time_to_first_pr_hours = None
+    if prs and issue_created_at and prs[0]["created_at"]:
+        delta = _parse_time(prs[0]["created_at"]) - _parse_time(issue_created_at)
+        time_to_first_pr_hours = round(delta.total_seconds() / 3600, 2)
+
+    return {
+        "repo": repo,
+        "issue_number": issue_number,
+        "issue_created_at": issue_created_at,
+        "issue_state": issue.get("state"),
+        "pr_counts": {
+            "open_ready": len(open_ready),
+            "open_draft": len(open_draft),
+            "merged": len([p for p in prs if p["state"] == "merged"]),
+            "closed_unmerged": len([p for p in prs if p["state"] == "closed"]),
+        },
+        "contested": bool(open_ready),
+        "being_raced": len(open_ready) + len(open_draft) >= 2,
+        "time_to_first_pr_hours": time_to_first_pr_hours,
+        "is_bot_is_heuristic": True,
+        "pull_requests": prs,
+    }
+
+
 @mcp.tool()
 def get_repo_context(repo: str) -> dict:
     """Get repo-level context to judge fit beyond an issue title: description,

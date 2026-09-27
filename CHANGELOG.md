@@ -2,6 +2,14 @@
 
 Version history for this project.
 
+## v0.5 — 2026-09-26
+
+- Add `get_pr_feasibility`: finds PRs already open against an issue before time goes into vetting it or drafting a contribution spec. Returns each PR's number, title, url, author, `author_association`, `is_bot`, `created_at`, `state` (open/closed/merged) and `draft`, plus `time_to_first_pr_hours`, `contested` (an open non-draft PR exists) and `being_raced` (2+ open PRs including drafts)
+- Also returns `pr_counts` (`open_ready`, `open_draft`, `merged`, `closed_unmerged`), so a merged or rejected PR isn't hidden behind `contested`. A merged PR can coexist with an open issue when the PR targets a non-default branch, omits a closing keyword, or the issue was reopened — confirmed in testing on an issue with 3 merged PRs still open
+- `is_bot` is a heuristic: a login ending in `[bot]`, or an AI-authorship marker in the first 1000 characters of the PR body. Flagged as such in the output via `is_bot_is_heuristic`
+- PRs are found by searching the issue number in PR titles and bodies. An issue timeline lookup was implemented first and then removed: across 7 test issues, including ones GitHub reports as `linked:pr`, `/issues/{n}/timeline` returned no `cross-referenced` or `connected` events (the legacy `mockingbird-preview` Accept header made no difference), while the text search found every PR. A PR linked only through GitHub's Development sidebar, with no mention in its text, is therefore not found
+- Not cached, no new tables
+
 ## v0.4 — 2026-09-27
 
 - Add `get_issue_detail`: full untruncated issue body plus the comment thread (author, `author_association`, body, timestamp), capped at 100 comments by default with `total_comments` and `truncated`; flags pull requests with `is_pull_request`

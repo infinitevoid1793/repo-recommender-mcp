@@ -15,6 +15,7 @@ Ask Claude *"what should I look at this week?"* and it searches GitHub with thes
 | `get_issue_activity` | Estimates whether a maintainer will respond: time to first maintainer comment, days since the last one, and the repo's open vs closed issue counts. |
 | `get_issue_detail` | Reads an issue in full: the untruncated body and the comment thread, with each commenter's association to the repo (so you can tell maintainer replies from others). |
 | `get_file_content` | Reads a file from a repo (optionally at a branch, tag or commit, and a line range), so an issue's claim can be checked against the real code. Lists the entries if the path is a directory. |
+| `get_pr_feasibility` | Checks whether an issue already has pull requests against it, so you don't draft a fix for something already raced. Reports open, draft, merged and rejected PR counts, how fast the first PR appeared, and flags likely bot authors. |
 | `record_recommendation` | Logs an issue as recommended so it doesn't come back in later searches. |
 | `update_interests` | Updates your saved profile (stack, interests, goals) when your priorities change. |
 | `save_shortlist` | Saves a ranked shortlist of repos for a topic, each with a reason and a status (shortlisted, interested, dismissed, pursued). |
@@ -78,11 +79,11 @@ echo "$(pwd)/.venv/bin/python" "$(pwd)/server.py"
 
 ### 5. Restart Claude Desktop
 
-Quit and reopen the app fully, then check the tools icon in the chat input. You should see eleven tools: `search_issues`, `search_repos`, `get_repo_context`, `get_issue_activity`, `get_repo_health`, `get_issue_detail`, `get_file_content`, `record_recommendation`, `update_interests`, `save_shortlist`, `get_shortlists`.
+Quit and reopen the app fully, then check the tools icon in the chat input. You should see twelve tools: `search_issues`, `search_repos`, `get_repo_context`, `get_issue_activity`, `get_repo_health`, `get_issue_detail`, `get_file_content`, `get_pr_feasibility`, `record_recommendation`, `update_interests`, `save_shortlist`, `get_shortlists`.
 
 ## Using it
 
-In a new chat, ask something like *"what should I look at this week?"* For a niche domain, Claude can run a research pass: check `get_shortlists` for the topic, `search_repos` to find active repos, `get_repo_health` on the candidates, then `save_shortlist` with the best ~10. Later, ask it to refresh a saved list. It can also call `search_issues` scoped to shortlisted repos to find concrete issues, then `get_issue_detail` and `get_file_content` to read the issue and the code it points at before recommending it. It uses `get_repo_context` and `get_issue_activity` on promising candidates and scores fit against your saved profile. Ask it to call `record_recommendation` on what it surfaces so those issues don't return, and tell it your priorities have changed to have it call `update_interests`.
+In a new chat, ask something like *"what should I look at this week?"* For a niche domain, Claude can run a research pass: check `get_shortlists` for the topic, `search_repos` to find active repos, `get_repo_health` on the candidates, then `save_shortlist` with the best ~10. Later, ask it to refresh a saved list. It can also call `search_issues` scoped to shortlisted repos to find concrete issues, then `get_issue_detail` to read the issue in full, `get_pr_feasibility` to check nobody has already opened a PR for it, and `get_file_content` to read the code it points at before recommending it. It uses `get_repo_context` and `get_issue_activity` on promising candidates and scores fit against your saved profile. Ask it to call `record_recommendation` on what it surfaces so those issues don't return, and tell it your priorities have changed to have it call `update_interests`.
 
 ## Notes
 

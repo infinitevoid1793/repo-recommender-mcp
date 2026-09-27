@@ -59,6 +59,9 @@ class GitHubClient:
             },
         )
 
+    def get_pull(self, repo: str, number: int) -> dict:
+        return self._get(f"/repos/{repo}/pulls/{number}")
+
     def get_repo(self, repo: str) -> dict:
         return self._get(f"/repos/{repo}")
 
