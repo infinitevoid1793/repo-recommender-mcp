@@ -1,5 +1,0 @@
-mcp>=2
-requests
-pyyaml
-duckdb
-python-dotenv

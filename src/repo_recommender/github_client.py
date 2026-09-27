@@ -73,7 +73,7 @@ class GitHubClient:
         content = data.get("content", "")
         try:
             decoded = base64.b64decode(content).decode("utf-8", errors="replace")
-        except Exception:
+        except ValueError:
             return ""
         return decoded[:max_chars]
 

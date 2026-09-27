@@ -1,13 +1,14 @@
 """Loads config.yaml and the GitHub token once at server startup."""
 
 import os
-from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
 
-CONFIG_PATH = Path(__file__).parent / "config.yaml"
-ENV_PATH = Path(__file__).parent / ".env"
+from .paths import project_root
+
+CONFIG_PATH = project_root() / "config.yaml"
+ENV_PATH = project_root() / ".env"
 
 
 class Config:

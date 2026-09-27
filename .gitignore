@@ -7,3 +7,8 @@ __pycache__/
 venv/
 GitHub Repo Recommender*Tool Spec.md
 BACKLOG.md
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/

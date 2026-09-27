@@ -2,6 +2,21 @@
 
 Version history for this project.
 
+## v1.0 — 2026-09-26
+
+Restructured into a proper Python package with a test suite. No change to what
+any tool returns, with one bug fix noted below.
+
+- `src/` layout: code moves to `src/repo_recommender/`, with tools split by concern into `tools/discovery.py` (search), `tools/inspection.py` (judging one candidate) and `tools/state.py` (persistence)
+- `pyproject.toml` replaces `requirements.txt`, and installs a `repo-recommender` console script — Claude Desktop now points at that instead of a script path
+- The `MCPServer` instance lives in `app.py`, so tool modules register against it without a circular import
+- Config and the GitHub client are built in `main()` via `runtime.py` instead of at import time, so the tools can be imported without a config file or token. That is what lets the tests run in CI
+- `config.yaml`, `.env` and `state.duckdb` still resolve to the project root via `paths.py`, so existing state is untouched; `REPO_RECOMMENDER_HOME` overrides it
+- 88 tests, all offline: the pure logic (query building, repo ranking, health summaries, file slicing, feasibility flags, shortlist validation) plus database round-trips against a temp DuckDB file per test, and a smoke test that all twelve tools register
+- Bug fix, found by a test: `search_issues(seed_repos=[])` fell back to the configured seed list instead of searching all of GitHub, because an empty list is falsy. Passing an empty list now does what the docstring always promised
+- GitHub Actions CI: lint and the test suite on Python 3.11, 3.12 and 3.13, then a build job that produces the wheel and sdist, checks their filenames match the declared version, and uploads them as run artifacts. No deployment
+- `timeutil.parse_time` drops a manual `Z` replacement that Python 3.11+ `fromisoformat` handles natively; `ruff` lint rules are pinned in `pyproject.toml` so an upgrade can't fail the build on newly added rules
+
 ## v0.5 — 2026-09-26
 
 - Add `get_pr_feasibility`: finds PRs already open against an issue before time goes into vetting it or drafting a contribution spec. Returns each PR's number, title, url, author, `author_association`, `is_bot`, `created_at`, `state` (open/closed/merged) and `draft`, plus `time_to_first_pr_hours`, `contested` (an open non-draft PR exists) and `being_raced` (2+ open PRs including drafts)

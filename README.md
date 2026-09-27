@@ -1,5 +1,7 @@
 # GitHub Repo Recommender (MCP)
 
+[![CI](https://github.com/infinitevoid1793/repo-recommender-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/infinitevoid1793/repo-recommender-mcp/actions/workflows/ci.yml)
+
 A local [MCP](https://modelcontextprotocol.io) server that helps Claude recommend specific GitHub issues and repos worth contributing to, based on *your* stack and interests rather than a generic trending list. It runs on your machine and plugs into Claude Desktop.
 
 Ask Claude *"what should I look at this week?"* and it searches GitHub with these tools, reads the results, and picks a shortlist, each with a one-line reason it fits you. Claude does the ranking itself in the conversation; the server supplies the data.
@@ -32,7 +34,16 @@ git clone https://github.com/infinitevoid1793/repo-recommender-mcp.git
 cd repo-recommender-mcp
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e .
+```
+
+Python 3.11 or newer is required. To work on the project, install the dev
+extras instead and run the checks:
+
+```bash
+pip install -e ".[dev]"
+pytest          # 88 offline tests, no token needed
+ruff check .
 ```
 
 ### 2. Create a GitHub token (read-only, dedicated to this tool)
@@ -64,17 +75,16 @@ Open Claude Desktop's config (**Settings → Developer → Edit Config**) and ad
 {
   "mcpServers": {
     "repo-recommender": {
-      "command": "/absolute/path/to/repo-recommender-mcp/.venv/bin/python",
-      "args": ["/absolute/path/to/repo-recommender-mcp/server.py"]
+      "command": "/absolute/path/to/repo-recommender-mcp/.venv/bin/repo-recommender"
     }
   }
 }
 ```
 
-Use absolute paths for both. The token isn't needed here; the server loads it from `.env`. To print your paths:
+The token isn't needed here; the server loads it from `.env`. To print the path:
 
 ```bash
-echo "$(pwd)/.venv/bin/python" "$(pwd)/server.py"
+echo "$(pwd)/.venv/bin/repo-recommender"
 ```
 
 ### 5. Restart Claude Desktop
@@ -91,6 +101,11 @@ In a new chat, ask something like *"what should I look at this week?"* For a nic
 - Delete `state.duckdb` to start fresh (this also erases saved shortlists and health history); it is recreated and reseeded from `config.yaml` on the next run.
 - Changes to `config.yaml`, `.env`, or the code take effect after restarting Claude Desktop.
 - Version history is in `CHANGELOG.md`.
+- Code lives in `src/repo_recommender/`, with the tools grouped into
+  `tools/discovery.py`, `tools/inspection.py` and `tools/state.py`. Tests are in
+  `tests/` and run without a token or network access.
+- CI (`.github/workflows/ci.yml`) lints and tests on Python 3.11–3.13, then
+  builds the wheel and sdist and attaches them to the run as artifacts.
 
 ## License
 
